@@ -38,7 +38,10 @@ DEFAULT_AGENTS = [
 ]
 
 @app.on_event("startup")
-def seed_agents():
+def startup_event():
+    # Initialize LiteLLM settings
+    ModelFactory.setup()
+    
     db = SessionLocal()
     try:
         if db.query(Agent).count() == 0:
@@ -130,13 +133,26 @@ async def test_broadcast(msg: dict):
 # --- LLM Model Management ---
 @app.get("/api/llm/models")
 async def get_llm_models():
+    models = []
+    # Fetch Ollama models
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{settings.OLLAMA_API_BASE}/api/tags")
             data = response.json()
-            return [m["name"] for m in data.get("models", [])]
+            models.extend([f"ollama/{m['name']}" for m in data.get("models", [])])
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error fetching Ollama models: {e}")
+
+    # Add popular NVIDIA NIM models
+    models.extend([
+        "nvidia_nim/meta/llama-3.1-8b-instruct",
+        "nvidia_nim/meta/llama-3.1-70b-instruct",
+        "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct",
+        "nvidia_nim/mistralai/mixtral-8x7b-instruct-v0.1",
+        "nvidia_nim/google/gemma-2-9b-it",
+        "nvidia_nim/google/gemma-2-27b-it"
+    ])
+    return models
 
 @app.get("/api/llm/current")
 def get_current_model():
@@ -146,8 +162,24 @@ def get_current_model():
 def set_current_model(payload: dict = Body(...)):
     model_name = payload.get("model")
     if model_name:
-        if not model_name.startswith("ollama/"):
-            model_name = f"ollama/{model_name}"
         ModelFactory.set_current_model(model_name)
         return {"status": "updated", "model": model_name}
     return {"error": "No model name provided"}
+
+@app.get("/api/llm/config")
+def get_llm_config():
+    return {
+        "ollama_api_base": settings.OLLAMA_API_BASE,
+        "nvidia_api_base": settings.NVIDIA_API_BASE,
+        "has_nvidia_key": bool(settings.NVIDIA_API_KEY)
+    }
+
+@app.post("/api/llm/config")
+def update_llm_config(payload: dict = Body(...)):
+    if "ollama_api_base" in payload:
+        settings.OLLAMA_API_BASE = payload["ollama_api_base"]
+    if "nvidia_api_base" in payload:
+        settings.NVIDIA_API_BASE = payload["nvidia_api_base"]
+    if "nvidia_api_key" in payload:
+        settings.NVIDIA_API_KEY = payload["nvidia_api_key"]
+    return {"status": "updated"}

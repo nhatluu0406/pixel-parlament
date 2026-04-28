@@ -10,10 +10,22 @@ interface Agent {
   sprite_id: string;
 }
 
+interface LLMConfig {
+  ollama_api_base: string;
+  nvidia_api_base: string;
+  has_nvidia_key: boolean;
+}
+
 export default function AdminPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [currentModel, setCurrentModel] = useState<string>("");
+  const [config, setConfig] = useState<LLMConfig>({
+    ollama_api_base: "",
+    nvidia_api_base: "",
+    has_nvidia_key: false
+  });
+  const [nvidiaKey, setNvidiaKey] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     role: "",
@@ -46,6 +58,12 @@ export default function AdminPage() {
         if (data.model) setCurrentModel(data.model);
       })
       .catch(e => console.error(e));
+
+    // Fetch Config
+    fetch("http://localhost:8080/api/llm/config")
+      .then(res => res.json())
+      .then(data => setConfig(data))
+      .catch(e => console.error(e));
   }, []);
 
   const handleModelChange = async (newModel: string) => {
@@ -56,12 +74,37 @@ export default function AdminPage() {
         body: JSON.stringify({ model: newModel })
       });
       if (res.ok) {
-        setCurrentModel(newModel.startsWith("ollama/") ? newModel : `ollama/${newModel}`);
+        setCurrentModel(newModel);
         alert("LLM Model Updated!");
       }
     } catch (e) {
       console.error(e);
       alert("Error updating model");
+    }
+  };
+
+  const saveConfig = async () => {
+    try {
+      const res = await fetch("http://localhost:8080/api/llm/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ollama_api_base: config.ollama_api_base,
+          nvidia_api_base: config.nvidia_api_base,
+          nvidia_api_key: nvidiaKey
+        })
+      });
+      if (res.ok) {
+        alert("Configuration Saved!");
+        setNvidiaKey("");
+        // Refresh config
+        const configRes = await fetch("http://localhost:8080/api/llm/config");
+        const configData = await configRes.json();
+        setConfig(configData);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error saving configuration");
     }
   };
 
@@ -87,25 +130,25 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-[#1a1c2c] p-8 text-white flex flex-col items-center">
-      <div className="w-full max-w-4xl flex justify-between items-center mb-8">
+      <div className="w-full max-w-6xl flex justify-between items-center mb-8">
         <h1 className="nes-text is-primary text-3xl uppercase">Admin Dashboard</h1>
         <Link href="/" className="nes-btn uppercase !text-lg">Back to Office</Link>
       </div>
 
-      <div className="w-full max-w-4xl flex flex-col gap-8">
-        {/* LLM Configuration Section */}
-        <div className="nes-container is-dark with-title w-full mb-4">
-          <p className="title text-[#f4b41b] !text-lg uppercase">LLM Configuration (Ollama)</p>
-          <div className="flex items-center gap-4 p-4 bg-black border border-gray-600 rounded">
-            <div className="flex-1 flex flex-col gap-2">
-              <label className="text-sm uppercase font-bold text-gray-400">Selected LLM Engine:</label>
+      <div className="w-full max-w-6xl flex flex-col gap-8">
+        <div className="flex gap-8">
+          {/* LLM Configuration Section */}
+          <div className="nes-container is-dark with-title flex-1">
+            <p className="title text-[#f4b41b] !text-lg uppercase">LLM Engine Selection</p>
+            <div className="flex flex-col gap-4 p-4 bg-black border border-gray-600 rounded">
+              <label className="text-sm uppercase font-bold text-gray-400">Active Model:</label>
               <div className="nes-select is-dark !w-full">
                 <select 
                   className="!text-lg"
-                  value={currentModel.replace("ollama/", "")} 
+                  value={currentModel} 
                   onChange={e => handleModelChange(e.target.value)}
                 >
-                  <option value="" disabled>Select an Ollama model...</option>
+                  <option value="" disabled>Select a model...</option>
                   {models.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
@@ -113,8 +156,41 @@ export default function AdminPage() {
               </div>
               <p className="text-xs text-gray-500 mt-2 italic">Current: {currentModel}</p>
             </div>
-            <div className="bg-[#f4b41b] p-4 rounded-full text-black">
-               <i className="nes-icon trophy is-medium"></i>
+          </div>
+
+          {/* Provider Settings */}
+          <div className="nes-container is-dark with-title flex-1">
+            <p className="title text-[#3498db] !text-lg uppercase">Provider Settings</p>
+            <div className="flex flex-col gap-4">
+              <div className="nes-field">
+                <label className="!text-sm uppercase font-bold">Ollama API Base</label>
+                <input 
+                  type="text" 
+                  className="nes-input is-dark !text-sm" 
+                  value={config.ollama_api_base}
+                  onChange={e => setConfig({...config, ollama_api_base: e.target.value})}
+                />
+              </div>
+              <div className="nes-field">
+                <label className="!text-sm uppercase font-bold">NVIDIA NIM Base</label>
+                <input 
+                  type="text" 
+                  className="nes-input is-dark !text-sm" 
+                  value={config.nvidia_api_base}
+                  onChange={e => setConfig({...config, nvidia_api_base: e.target.value})}
+                />
+              </div>
+              <div className="nes-field">
+                <label className="!text-sm uppercase font-bold">NVIDIA API Key</label>
+                <input 
+                  type="password" 
+                  className="nes-input is-dark !text-sm" 
+                  placeholder={config.has_nvidia_key ? "******** (Already set)" : "Enter API Key..."}
+                  value={nvidiaKey}
+                  onChange={e => setNvidiaKey(e.target.value)}
+                />
+              </div>
+              <button onClick={saveConfig} className="nes-btn is-primary uppercase !text-sm">Save Config</button>
             </div>
           </div>
         </div>
